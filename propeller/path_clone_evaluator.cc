@@ -324,6 +324,10 @@ void PathTreeCloneEvaluator::EvaluateCloningsForSubtree(
   // Cloning within this subtree won't be profitable if there is only one
   // possible path predecessor.
   if (path_tree.path_pred_info().entries.size() < 2) return;
+  // LBR targets cannot distinguish zero-sized blocks sharing an address with
+  // another block. The address mapper includes them for layout reconstruction,
+  // but the inferred edges need not be real CFG edges. Do not clone such paths.
+  if (cfg_.nodes().at(path_tree.node_bb_index())->size() == 0) return;
   bool has_indirect_branch =
       cfg_.nodes().at(path_tree.node_bb_index())->has_indirect_branch();
 
@@ -372,6 +376,8 @@ void PathTreeCloneEvaluator::EvaluateCloningsForPath(
   }
   for (const auto& [pred_bb_index, path_pred_info_entry] :
        path_node.path_pred_info().entries) {
+    // A zero-sized predecessor is likewise not an observable branch source.
+    if (cfg_.nodes().at(pred_bb_index)->size() == 0) continue;
     // We can't clone a path when the path predecessor has an indirect branch as
     // it can't be rewired.
     if (cfg_.nodes().at(pred_bb_index)->has_indirect_branch()) continue;
