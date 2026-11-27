@@ -487,6 +487,40 @@ TEST(PathCloneEvaluator, LimitsCloningPathLength) {
                               PathCloningIs(6, 2, ElementsAre(2, 3)), _, _)))));
 }
 
+TEST(PathCloneEvaluator, ExcludesZeroSizedBlocksFromCloningPaths) {
+  // Exercise the predecessor, root, intermediate, and terminal positions.
+  for (int empty_bb_index : {2, 3, 4, 5}) {
+    SCOPED_TRACE(empty_bb_index);
+    MultiCfgArg original = GetDefaultProgramCfgArg();
+    std::vector<CfgArg> cfg_args;
+    for (const auto& cfg_arg : original.cfg_args) {
+      auto nodes = cfg_arg.node_args;
+      if (cfg_arg.function_index == 6) nodes[empty_bb_index].size = 0;
+      cfg_args.push_back({cfg_arg.section_name, cfg_arg.function_index,
+                          cfg_arg.function_name, std::move(nodes),
+                          cfg_arg.edge_args});
+    }
+    auto program_cfg = BuildFromCfgArg({cfg_args, original.inter_edge_args});
+    ProgramPathProfile path_profile(GetDefaultPathProfileArg());
+    PropellerCodeLayoutParameters code_layout_params;
+    code_layout_params.set_call_chain_clustering(false);
+    auto clonings =
+        EvaluateAllClonings(program_cfg.get(), &path_profile,
+                            code_layout_params, PathProfileOptions());
+    for (const auto& cloning : clonings.at(6)) {
+      for (int bb_index : cloning.path_cloning.GetFullPath()) {
+        EXPECT_NE(bb_index, empty_bb_index);
+      }
+    }
+    if (empty_bb_index == 4) {
+      // An ambiguous side path must not disable unrelated profitable cloning.
+      EXPECT_THAT(clonings.at(6),
+                  Contains(EvaluatedPathCloningIs(
+                      PathCloningIs(6, 2, ElementsAre(2, 3, 5)), _, _)));
+    }
+  }
+}
+
 TEST(PathCloneEvaluator, GetsInitialChains) {
   std::unique_ptr<ProgramCfg> program_cfg =
       BuildFromCfgArg(GetDefaultProgramCfgArg());
